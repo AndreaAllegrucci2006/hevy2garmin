@@ -92,6 +92,7 @@ async def workouts_page(request: Request):
         for w in data.get("workouts", []):
             w["synced"] = db.is_synced(w["id"])
             w["start_time"] = w.get("start_time") or w.get("startTime", "")
+            w["end_time"] = w.get("end_time") or w.get("endTime", "")
         workouts = data.get("workouts", [])
     except Exception as e:
         logger.error("Failed to fetch workouts: %s", e)

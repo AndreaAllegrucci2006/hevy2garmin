@@ -2,28 +2,43 @@
 {% block title %}Dashboard · hevy2garmin{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h1>Dashboard</h1>
+<!-- Hero: explain what this is -->
+<div style="text-align: center; padding: 24px 0 32px;">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 16px;">
+        <div style="background: #ef4444; padding: 10px 16px; border-radius: 10px; font-weight: 700; font-size: 15px;">HEVY</div>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        <div style="background: var(--accent); padding: 10px 16px; border-radius: 10px; font-weight: 700; font-size: 15px;">GARMIN</div>
+    </div>
+    <p style="color: var(--text-secondary); font-size: 15px; max-width: 480px; margin: 0 auto;">
+        Your gym workouts from Hevy, automatically uploaded to Garmin Connect with correct exercise names, sets, reps, and weights.
+    </p>
 </div>
 
+<!-- Stats -->
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-value accent">{{ synced_count }}</div>
-        <div class="stat-label">Synced</div>
+        <div class="stat-label">Uploaded to Garmin</div>
     </div>
     <div class="stat-card">
         <div class="stat-value blue">{{ hevy_total }}</div>
-        <div class="stat-label">Total in Hevy</div>
+        <div class="stat-label">Workouts in Hevy</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value amber">{{ hevy_total - synced_count }}</div>
-        <div class="stat-label">Pending</div>
+        <div class="stat-value {% if hevy_total - synced_count > 0 %}amber{% endif %}">{{ hevy_total - synced_count }}</div>
+        <div class="stat-label">Not yet on Garmin</div>
     </div>
 </div>
 
+<!-- Primary action -->
 <div class="card">
     <div class="card-header">
-        <span class="card-title">Quick Sync</span>
+        <div>
+            <span class="card-title">Sync to Garmin</span>
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">
+                Uploads your recent Hevy workouts as strength activities to Garmin Connect.
+            </p>
+        </div>
         <button
             class="btn btn-primary"
             hx-post="/api/sync"
@@ -32,43 +47,70 @@
         >
             <span class="htmx-hide">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                Sync Recent
+                Sync Now
             </span>
             <span class="htmx-indicator" id="sync-indicator">
                 <span class="spinner"></span>
-                Syncing...
+                Uploading...
             </span>
         </button>
     </div>
     <div id="sync-result"></div>
-    {% if not recent %}
-    <p style="color: var(--text-muted); font-size: 14px;">No workouts synced yet. Click Sync Recent to get started.</p>
-    {% endif %}
 </div>
 
+<!-- Recently synced -->
 {% if recent %}
-<div class="section" style="margin-top: 24px;">
-    <div class="card">
-        <div class="card-header">
-            <span class="card-title">Recently Synced</span>
-        </div>
-        {% for r in recent %}
-        <div class="list-item">
-            <div>
-                <div style="font-weight: 600; font-size: 14px;">{{ r.title }}</div>
-                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">{{ r.synced_at }}</div>
-            </div>
-            {% if r.garmin_activity_id %}
-            <span class="badge badge-success">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                Synced
-            </span>
-            {% else %}
-            <span class="badge badge-pending">No ID</span>
-            {% endif %}
-        </div>
-        {% endfor %}
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <span class="card-title">Recently Uploaded</span>
+        <a href="/history" style="font-size: 13px;">View all &rarr;</a>
     </div>
+    {% for r in recent %}
+    <div class="list-item">
+        <div>
+            <div style="font-weight: 600; font-size: 14px;">{{ r.title }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                {{ r.synced_at }}
+                {% if r.calories %} &middot; {{ r.calories }} kcal{% endif %}
+                {% if r.avg_hr %} &middot; {{ r.avg_hr }} bpm{% endif %}
+            </div>
+        </div>
+        <span class="badge badge-success">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            On Garmin
+        </span>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<!-- First-time guidance -->
+<div class="card" style="margin-top: 20px; text-align: center; padding: 32px 20px;">
+    <p style="color: var(--text-secondary); font-weight: 500; margin-bottom: 8px;">No workouts uploaded yet</p>
+    <p style="color: var(--text-muted); font-size: 13px;">Click <strong>Sync Now</strong> above to upload your recent Hevy workouts to Garmin Connect.<br>Or go to <a href="/workouts">Workouts</a> to pick specific ones.</p>
 </div>
 {% endif %}
+
+<!-- How it works (collapsed for returning users) -->
+<details style="margin-top: 20px;">
+    <summary style="cursor: pointer; color: var(--text-muted); font-size: 14px; padding: 12px 0;">How does this work?</summary>
+    <div class="card" style="margin-top: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center;">
+            <div>
+                <div style="font-size: 24px; margin-bottom: 8px;">1</div>
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Log in Hevy</div>
+                <div style="font-size: 13px; color: var(--text-muted);">Track your gym workout with sets, reps, and weights as usual.</div>
+            </div>
+            <div>
+                <div style="font-size: 24px; margin-bottom: 8px;">2</div>
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Click Sync</div>
+                <div style="font-size: 13px; color: var(--text-muted);">We generate a Garmin FIT file with your exercises mapped to Garmin's categories.</div>
+            </div>
+            <div>
+                <div style="font-size: 24px; margin-bottom: 8px;">3</div>
+                <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">See on Garmin</div>
+                <div style="font-size: 13px; color: var(--text-muted);">Your workout appears in Garmin Connect with correct exercise names and a summary.</div>
+            </div>
+        </div>
+    </div>
+</details>
 {% endblock %}

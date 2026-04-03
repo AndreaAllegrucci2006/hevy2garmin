@@ -4,8 +4,8 @@
 {% block content %}
 <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
     <div>
-        <h1>Workouts</h1>
-        <p>{{ workouts|length }} most recent from Hevy</p>
+        <h1>Your Hevy Workouts</h1>
+        <p>Select workouts to upload to Garmin Connect</p>
     </div>
     <button
         class="btn btn-primary"
@@ -15,55 +15,74 @@
     >
         <span class="htmx-hide">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Sync All Unsynced
+            Upload All to Garmin
         </span>
-        <span class="htmx-indicator" id="sync-all-ind"><span class="spinner"></span> Syncing...</span>
+        <span class="htmx-indicator" id="sync-all-ind"><span class="spinner"></span> Uploading...</span>
     </button>
 </div>
 
 <div id="sync-result"></div>
 
-<div class="card" style="padding: 0; overflow: hidden;">
-    <table>
-        <thead>
-            <tr>
-                <th style="width: 100px;">Status</th>
-                <th>Date</th>
-                <th>Title</th>
-                <th style="text-align: center;">Exercises</th>
-                <th style="width: 80px;"></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for w in workouts %}
-            <tr>
-                <td>
-                    {% if w.synced %}
-                    <span class="badge badge-success">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                        Synced
+{% for w in workouts %}
+<div class="card" style="margin-bottom: 12px; {% if w.synced %}opacity: 0.6;{% endif %}">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                <span style="font-weight: 700; font-size: 16px;">{{ w.title }}</span>
+                {% if w.synced %}
+                <span class="badge badge-success">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    On Garmin
+                </span>
+                {% else %}
+                <span class="badge badge-pending">Not synced</span>
+                {% endif %}
+            </div>
+            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px;">
+                {{ w.start_time[:10] }} at {{ w.start_time[11:16] }}
+                {% if w.end_time %}
+                    {% set start_h = w.start_time[11:13]|int %}
+                    {% set start_m = w.start_time[14:16]|int %}
+                    {% set end_h = (w.get('end_time', '') or w.get('endTime', ''))[11:13] %}
+                    {% set end_m = (w.get('end_time', '') or w.get('endTime', ''))[14:16] %}
+                {% endif %}
+                &middot; {{ w.exercises|length }} exercises
+            </div>
+            <!-- Exercise list -->
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                {% for ex in w.exercises %}
+                <span style="font-size: 12px; padding: 3px 10px; background: rgba(255,255,255,0.04); border-radius: 100px; color: var(--text-secondary);">
+                    {{ ex.get('title') or ex.get('name', '?') }}
+                    <span style="color: var(--text-muted);">
+                        {{ ex.get('sets', [])|selectattr('type', 'equalto', 'normal')|list|length }}s
                     </span>
-                    {% else %}
-                    <span class="badge badge-pending">Pending</span>
-                    {% endif %}
-                </td>
-                <td style="color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums;">{{ w.start_time[:16].replace('T', ' ') }}</td>
-                <td style="font-weight: 600;">{{ w.title }}</td>
-                <td style="text-align: center; color: var(--text-muted);">{{ w.exercises|length }}</td>
-                <td>
-                    {% if not w.synced %}
-                    <button
-                        class="btn btn-secondary btn-sm"
-                        hx-post="/api/sync/{{ w.id }}"
-                        hx-target="closest tr"
-                        hx-swap="outerHTML"
-                        hx-indicator="closest tr"
-                    >Sync</button>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        <div style="flex-shrink: 0; margin-left: 16px;">
+            {% if not w.synced %}
+            <button
+                class="btn btn-secondary btn-sm"
+                hx-post="/api/sync/{{ w.id }}"
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                hx-indicator="closest .card"
+                aria-label="Upload {{ w.title }} to Garmin"
+            >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                Upload
+            </button>
+            {% endif %}
+        </div>
+    </div>
 </div>
+{% endfor %}
+
+{% if not workouts %}
+<div class="card" style="text-align: center; padding: 48px 20px;">
+    <p style="color: var(--text-secondary); font-weight: 500;">No workouts found</p>
+    <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Make sure your Hevy API key is set up in <a href="/settings">Settings</a>.</p>
+</div>
+{% endif %}
 {% endblock %}
