@@ -46,19 +46,18 @@ async def dashboard(request: Request):
     try:
         from hevy2garmin.hevy import HevyClient
         from hevy2garmin.garmin import get_client
-        from hevy2garmin.matcher import fetch_garmin_activities, match_workouts_to_garmin
+        from hevy2garmin.matcher import fetch_garmin_activities, count_matched_workouts
 
         hevy = HevyClient(api_key=config.get("hevy_api_key"))
         hevy_total = hevy.get_workout_count()
 
-        # Match recent Hevy workouts against Garmin activities
+        # Count how many Hevy workouts are already on Garmin
         if config.get("garmin_email"):
             try:
                 garmin_client = get_client(config.get("garmin_email"))
-                garmin_acts = fetch_garmin_activities(garmin_client, count=50)
-                hevy_recent = hevy.get_workouts(page=1, page_size=10).get("workouts", [])
-                matches = match_workouts_to_garmin(hevy_recent, garmin_acts)
-                matched_count = len(matches)
+                garmin_acts = fetch_garmin_activities(garmin_client, count=1000)
+                hevy_sample = hevy.get_workouts(page=1, page_size=10).get("workouts", [])
+                matched_count = count_matched_workouts(hevy_total, hevy_sample, garmin_acts)
             except Exception:
                 pass
     except Exception:
