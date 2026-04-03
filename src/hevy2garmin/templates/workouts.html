@@ -132,6 +132,21 @@
                 </div>
             </details>
             {% endif %}
+
+            <!-- HR Chart (expandable, for matched workouts) -->
+            {% if w.status in ('matched', 'uploaded') %}
+            <details class="cal-detail" style="margin-top: 8px;">
+                <summary onclick="loadHRChart('{{ w.id }}', this)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    Heart Rate Timeline
+                </summary>
+                <div id="hr-chart-{{ w.id }}" style="padding: 12px 0; max-height: 280px;">
+                    <div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px;">
+                        <span class="spinner" style="display: inline-block; margin-right: 8px;"></span>Loading HR data from Garmin...
+                    </div>
+                </div>
+            </details>
+            {% endif %}
         </div>
         <div style="flex-shrink: 0; margin-left: 16px;">
             {% if w.status == 'pending' %}
@@ -158,4 +173,153 @@
     <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Make sure your Hevy API key is set up in <a href="/settings">Settings</a>.</p>
 </div>
 {% endif %}
+
+<script>
+const hrChartCache = {};
+
+async function loadHRChart(hevyId, summaryEl) {
+    const container = document.getElementById('hr-chart-' + hevyId);
+    if (hrChartCache[hevyId]) return; // already loaded
+
+    try {
+        const resp = await fetch('/api/workout/' + hevyId + '/hr');
+        if (!resp.ok) {
+            const err = await resp.json();
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px; padding: 12px 0;">No HR data available' + (err.error ? ': ' + err.error : '') + '</p>';
+            return;
+        }
+        const data = await resp.json();
+        if (!data.hr_samples || data.hr_samples.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px; padding: 12px 0;">No HR samples found for this workout.</p>';
+            return;
+        }
+
+        // Build summary line
+        let summary = '';
+        if (data.avg_hr) summary += '<span style="color: #f43f5e; font-weight: 600;">avg ' + data.avg_hr + '</span>';
+        if (data.max_hr) summary += ' · <span style="color: #f43f5e; font-weight: 600;">max ' + data.max_hr + '</span>';
+        if (data.calories) summary += ' · <span style="color: var(--accent); font-weight: 600;">' + data.calories + ' kcal</span>';
+        summary += ' <span style="color: var(--text-muted);">bpm</span>';
+
+        // Exercise legend
+        let legend = '<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">';
+        data.segments.forEach(seg => {
+            legend += '<span style="font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">'
+                + '<span style="width: 8px; height: 8px; border-radius: 2px; background: ' + seg.color + ';"></span>'
+                + seg.name + '</span>';
+        });
+        legend += '</div>';
+
+        container.innerHTML = '<div style="font-size: 13px; margin-bottom: 8px;">' + summary + '</div>'
+            + '<div style="position: relative; height: 180px;"><canvas id="hr-canvas-' + hevyId + '"></canvas></div>'
+            + legend;
+
+        // Render chart
+        const canvas = document.getElementById('hr-canvas-' + hevyId);
+        const ctx = canvas.getContext('2d');
+
+        // Convert HR samples to chart data
+        const labels = data.hr_samples.map(s => {
+            const min = Math.floor(s.time / 60);
+            return min + 'm';
+        });
+        const hrValues = data.hr_samples.map(s => s.hr);
+
+        // Build segment background colors per sample
+        const bgColors = data.hr_samples.map(s => {
+            for (const seg of data.segments) {
+                if (s.time >= seg.start && s.time <= seg.end) {
+                    return seg.color + '18'; // low opacity
+                }
+            }
+            return 'transparent';
+        });
+
+        // Segment annotations as vertical bands
+        const segmentPlugin = {
+            id: 'segmentBands',
+            beforeDraw(chart) {
+                const { ctx, chartArea: {left, right, top, bottom}, scales: {x} } = chart;
+                const totalTime = data.hr_samples[data.hr_samples.length - 1].time;
+                data.segments.forEach(seg => {
+                    const x1 = left + (seg.start / totalTime) * (right - left);
+                    const x2 = left + (seg.end / totalTime) * (right - left);
+                    ctx.fillStyle = seg.color + '12';
+                    ctx.fillRect(x1, top, x2 - x1, bottom - top);
+                    // Separator line
+                    if (seg.start > 0) {
+                        ctx.strokeStyle = '#27272a';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([3, 3]);
+                        ctx.beginPath();
+                        ctx.moveTo(x1, top);
+                        ctx.lineTo(x1, bottom);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                });
+            }
+        };
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: hrValues,
+                    borderColor: '#f43f5e',
+                    borderWidth: 1.5,
+                    backgroundColor: 'rgba(244, 63, 94, 0.08)',
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.3,
+                }]
+            },
+            plugins: [segmentPlugin],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => {
+                                const idx = items[0].dataIndex;
+                                const secs = data.hr_samples[idx].time;
+                                const min = Math.floor(secs / 60);
+                                const sec = Math.floor(secs % 60);
+                                // Find exercise
+                                let exName = '';
+                                for (const seg of data.segments) {
+                                    if (secs >= seg.start && secs <= seg.end) { exName = seg.name; break; }
+                                }
+                                return min + ':' + String(sec).padStart(2, '0') + (exName ? ' — ' + exName : '');
+                            },
+                            label: (item) => item.raw + ' bpm'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 8 },
+                        grid: { display: false }
+                    },
+                    y: {
+                        display: true,
+                        ticks: { color: '#64748b', font: { size: 10 }, callback: v => v + '' },
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        min: Math.max(40, Math.min(...hrValues) - 10),
+                    }
+                },
+                interaction: { mode: 'index', intersect: false },
+            }
+        });
+
+        hrChartCache[hevyId] = true;
+    } catch (e) {
+        container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">Failed to load HR data: ' + e.message + '</p>';
+    }
+}
+</script>
 {% endblock %}

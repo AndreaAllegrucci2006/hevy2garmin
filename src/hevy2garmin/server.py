@@ -291,6 +291,105 @@ async def workouts_page(request: Request):
     return _render("workouts.html", workouts=workouts)
 
 
+@app.get("/api/workout/{hevy_id}/hr", response_class=HTMLResponse)
+async def api_workout_hr(request: Request, hevy_id: str):
+    """Fetch HR data for a workout's matched Garmin activity. Returns JSON for Chart.js."""
+    from fastapi.responses import JSONResponse
+    config = load_config()
+
+    try:
+        from hevy2garmin.hevy import HevyClient
+        from hevy2garmin.garmin import get_client
+        from hevy2garmin.matcher import fetch_garmin_activities, match_workouts_to_garmin
+        from garmin_auth import RateLimiter
+
+        hevy = HevyClient(api_key=config.get("hevy_api_key"))
+        data = hevy.get_workouts(page=1, page_size=10)
+        workouts = data.get("workouts", [])
+        workout = next((w for w in workouts if w["id"] == hevy_id), None)
+        if not workout:
+            return JSONResponse({"error": "Workout not found"}, status_code=404)
+
+        garmin_client = get_client(config.get("garmin_email"))
+        garmin_acts = fetch_garmin_activities(garmin_client, count=50)
+        matches = match_workouts_to_garmin([workout], garmin_acts)
+
+        if hevy_id not in matches:
+            return JSONResponse({"error": "No matching Garmin activity"}, status_code=404)
+
+        garmin_id = matches[hevy_id]["garmin_id"]
+        limiter = RateLimiter(delay=1.0)
+
+        # Fetch activity summary for avg/max HR
+        details = limiter.call(garmin_client.get_activity, garmin_id)
+
+        # Get workout start/end timestamps to slice daily HR
+        from hevy2garmin.fit import _parse_timestamp
+        w_start = workout.get("start_time") or workout.get("startTime", "")
+        w_end = workout.get("end_time") or workout.get("endTime", "")
+        start_dt = _parse_timestamp(w_start)
+        end_dt = _parse_timestamp(w_end)
+        start_ms = int(start_dt.timestamp() * 1000)
+        end_ms = int(end_dt.timestamp() * 1000)
+
+        # Fetch daily HR data and slice to workout window
+        date_str = w_start[:10]
+        daily_hr = limiter.call(garmin_client.get_heart_rates, date_str)
+        hr_values = daily_hr.get("heartRateValues", []) if isinstance(daily_hr, dict) else []
+
+        hr_samples = []
+        for entry in hr_values:
+            if isinstance(entry, list) and len(entry) >= 2 and entry[1] is not None:
+                ts, bpm = entry[0], entry[1]
+                if start_ms - 60000 <= ts <= end_ms + 60000:  # ±1 min buffer
+                    secs_from_start = (ts - start_ms) / 1000
+                    hr_samples.append({"time": max(0, secs_from_start), "hr": bpm})
+
+        hr_samples.sort(key=lambda x: x["time"])
+
+        # Build exercise segments (estimated timing)
+        exercises = workout.get("exercises", [])
+        from hevy2garmin.fit import _parse_timestamp
+        from hevy2garmin.config import load_config as _lc
+        cfg = _lc()
+        working_s = cfg.get("timing", {}).get("working_set_seconds", 40)
+        warmup_s = cfg.get("timing", {}).get("warmup_set_seconds", 25)
+        rest_sets_s = cfg.get("timing", {}).get("rest_between_sets_seconds", 75)
+        rest_ex_s = cfg.get("timing", {}).get("rest_between_exercises_seconds", 120)
+
+        seg_colors = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ef4444", "#06b6d4", "#eab308", "#ec4899"]
+        segments = []
+        t = 0
+        for i, ex in enumerate(exercises):
+            sets = ex.get("sets", [])
+            ex_start = t
+            for s in sets:
+                dur = warmup_s if s.get("type") == "warmup" else working_s
+                t += dur + rest_sets_s
+            t -= rest_sets_s  # no rest after last set
+            t += rest_ex_s
+            segments.append({
+                "name": ex.get("title") or ex.get("name", f"Exercise {i+1}"),
+                "start": ex_start,
+                "end": t - rest_ex_s,
+                "color": seg_colors[i % len(seg_colors)],
+            })
+
+        return JSONResponse({
+            "hr_samples": hr_samples,
+            "segments": segments,
+            "garmin_id": garmin_id,
+            "garmin_name": matches[hevy_id].get("garmin_name", ""),
+            "avg_hr": details.get("averageHR") or details.get("summaryDTO", {}).get("averageHR"),
+            "max_hr": details.get("maxHR") or details.get("summaryDTO", {}).get("maxHR"),
+            "calories": details.get("calories") or details.get("summaryDTO", {}).get("calories"),
+        })
+
+    except Exception as e:
+        logger.error("HR data fetch failed: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/sync", response_class=HTMLResponse)
 async def sync_page(request: Request):
     return _render(
