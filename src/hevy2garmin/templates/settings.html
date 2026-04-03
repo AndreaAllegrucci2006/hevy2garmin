@@ -1,14 +1,57 @@
 {% extends "base.html" %}
 {% block title %}Settings · hevy2garmin{% endblock %}
 
+{% block head %}
+<style>
+    .formula-box {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 14px 18px;
+        margin: 12px 0;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 14px;
+        color: var(--accent);
+        overflow-x: auto;
+    }
+    .section-description {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 16px;
+        line-height: 1.6;
+    }
+    details.advanced-section > summary {
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0;
+        list-style: none;
+    }
+    details.advanced-section > summary::-webkit-details-marker { display: none; }
+    details.advanced-section > summary svg { transition: transform 0.2s; }
+    details.advanced-section[open] > summary svg { transform: rotate(90deg); }
+    details.advanced-section > .advanced-content { margin-top: 16px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <h1>Settings</h1>
 </div>
 
 <form method="post" action="/settings">
+    <!-- Credentials Section -->
     <div class="card section">
-        <div class="card-title" style="margin-bottom: 16px;">API Credentials</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="card-title">Credentials</span>
+        </div>
         <div class="form-group">
             <label class="form-label" for="hevy_api_key">Hevy API Key</label>
             <input class="form-input" type="text" id="hevy_api_key" name="hevy_api_key" value="{{ config.get('hevy_api_key', '') }}" placeholder="Your Hevy API key">
@@ -25,8 +68,15 @@
         </div>
     </div>
 
+    <!-- Profile Section -->
     <div class="card section">
-        <div class="card-title" style="margin-bottom: 16px;">User Profile</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span class="card-title">Profile</span>
+        </div>
+        <p class="section-description">
+            Used to estimate calories burned. The Keytel formula uses your weight, age, heart rate, and VO2max to compute kcal burned during each workout.
+        </p>
         <div class="form-grid">
             <div class="form-group">
                 <label class="form-label" for="weight_kg">Weight (kg)</label>
@@ -44,29 +94,52 @@
                 </select>
             </div>
         </div>
+
+        <!-- Calorie formula explanation -->
+        <details style="margin-top: 16px;">
+            <summary style="cursor: pointer; font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                How are calories calculated?
+            </summary>
+            <div style="margin-top: 12px;">
+                <div class="formula-box">kcal/min = (-95.7735 + 0.634 &times; HR + 0.404 &times; VO&#8322;max + 0.394 &times; Weight + 0.271 &times; Age) / 4.184</div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.6;">
+                    HR comes from your Garmin watch if matched, otherwise defaults to 90 bpm.
+                    The formula is applied per-sample across the workout duration to compute total kcal.
+                </p>
+            </div>
+        </details>
     </div>
 
+    <!-- Advanced Section (FIT Timing) -->
     <div class="card section">
-        <div class="card-title" style="margin-bottom: 16px;">FIT Timing (seconds)</div>
-        <div class="form-hint" style="margin-bottom: 12px;">Controls how set durations are estimated in the FIT file.</div>
-        <div class="form-grid">
-            <div class="form-group">
-                <label class="form-label" for="working_set_seconds">Working Set</label>
-                <input class="form-input" type="number" id="working_set_seconds" name="working_set_seconds" value="{{ config.get('timing', {}).get('working_set_seconds', 40) }}">
+        <details class="advanced-section">
+            <summary>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                Advanced
+            </summary>
+            <div class="advanced-content">
+                <p class="section-description">Controls how set durations are estimated in the FIT file when exact timing is not available from Hevy.</p>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="working_set_seconds">Working Set (seconds)</label>
+                        <input class="form-input" type="number" id="working_set_seconds" name="working_set_seconds" value="{{ config.get('timing', {}).get('working_set_seconds', 40) }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="warmup_set_seconds">Warmup Set (seconds)</label>
+                        <input class="form-input" type="number" id="warmup_set_seconds" name="warmup_set_seconds" value="{{ config.get('timing', {}).get('warmup_set_seconds', 25) }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="rest_between_sets_seconds">Rest Between Sets (seconds)</label>
+                        <input class="form-input" type="number" id="rest_between_sets_seconds" name="rest_between_sets_seconds" value="{{ config.get('timing', {}).get('rest_between_sets_seconds', 75) }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="rest_between_exercises_seconds">Rest Between Exercises (seconds)</label>
+                        <input class="form-input" type="number" id="rest_between_exercises_seconds" name="rest_between_exercises_seconds" value="{{ config.get('timing', {}).get('rest_between_exercises_seconds', 120) }}">
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label class="form-label" for="warmup_set_seconds">Warmup Set</label>
-                <input class="form-input" type="number" id="warmup_set_seconds" name="warmup_set_seconds" value="{{ config.get('timing', {}).get('warmup_set_seconds', 25) }}">
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="rest_between_sets_seconds">Rest Between Sets</label>
-                <input class="form-input" type="number" id="rest_between_sets_seconds" name="rest_between_sets_seconds" value="{{ config.get('timing', {}).get('rest_between_sets_seconds', 75) }}">
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="rest_between_exercises_seconds">Rest Between Exercises</label>
-                <input class="form-input" type="number" id="rest_between_exercises_seconds" name="rest_between_exercises_seconds" value="{{ config.get('timing', {}).get('rest_between_exercises_seconds', 120) }}">
-            </div>
-        </div>
+        </details>
     </div>
 
     <button type="submit" class="btn btn-primary">

@@ -1,6 +1,41 @@
 {% extends "base.html" %}
 {% block title %}Workouts · hevy2garmin{% endblock %}
 
+{% block head %}
+<style>
+    .cal-detail {
+        margin-top: 10px;
+        border-top: 1px solid var(--border-subtle);
+    }
+    .cal-detail summary {
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--text-muted);
+        padding: 8px 0 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        list-style: none;
+    }
+    .cal-detail summary::-webkit-details-marker { display: none; }
+    .cal-detail-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        padding: 10px 0 4px;
+    }
+    .cal-detail-item {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+    .cal-detail-item strong {
+        color: var(--text-primary);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
     <div>
@@ -69,6 +104,34 @@
                 {% endif %}
                 {% endfor %}
             </div>
+
+            <!-- Calorie breakdown -->
+            {% if w.cal_info %}
+            <details class="cal-detail">
+                <summary>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                    Calories: {{ w.cal_info.total_kcal }} kcal
+                </summary>
+                <div class="cal-detail-grid">
+                    <div class="cal-detail-item">
+                        Duration: <strong>{{ w.cal_info.duration_min }} min</strong>
+                    </div>
+                    <div class="cal-detail-item">
+                        Avg HR: <strong>{{ w.cal_info.avg_hr }} bpm</strong>
+                        <span style="color: var(--text-muted);">({{ w.cal_info.hr_source }})</span>
+                    </div>
+                    <div class="cal-detail-item">
+                        Weight: <strong>{{ w.cal_info.weight_kg }} kg</strong>
+                    </div>
+                    <div class="cal-detail-item">
+                        Age: <strong>{{ w.cal_info.age }}</strong>
+                    </div>
+                    <div class="cal-detail-item">
+                        Total: <strong style="color: var(--accent);">{{ w.cal_info.total_kcal }} kcal</strong>
+                    </div>
+                </div>
+            </details>
+            {% endif %}
         </div>
         <div style="flex-shrink: 0; margin-left: 16px;">
             {% if w.status == 'pending' %}

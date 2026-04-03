@@ -26,6 +26,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "default_limit": 10,
         "skip_existing": True,
     },
+    "auto_sync": {
+        "enabled": False,
+        "interval_minutes": 30,
+    },
     "timing": {
         "working_set_seconds": 40,
         "warmup_set_seconds": 25,

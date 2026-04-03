@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -25,6 +28,115 @@ def _render(template_name: str, **ctx) -> HTMLResponse:
 
 
 app = FastAPI(title="hevy2garmin", docs_url=None, redoc_url=None)
+
+
+# ── Auto-sync state ─────────────────────────────────────────────────────────
+
+_autosync_timer: threading.Timer | None = None
+_autosync_lock = threading.Lock()
+_sync_log: list[dict[str, Any]] = []  # last 10 sync run results
+_last_sync_time: datetime | None = None
+
+
+def _run_autosync() -> None:
+    """Execute a sync and reschedule if still enabled."""
+    global _last_sync_time
+    config = load_config()
+    auto_cfg = config.get("auto_sync", {})
+    if not auto_cfg.get("enabled", False):
+        return
+
+    logger.info("Auto-sync: running scheduled sync")
+    try:
+        result = sync(limit=10, dry_run=False)
+    except Exception as e:
+        result = {"synced": 0, "skipped": 0, "failed": 1, "error": str(e)}
+
+    _last_sync_time = datetime.now(timezone.utc)
+    _record_sync_log(result, trigger="auto")
+
+    # Reschedule
+    _schedule_autosync(auto_cfg.get("interval_minutes", 30))
+
+
+def _schedule_autosync(interval_minutes: int) -> None:
+    """Schedule the next auto-sync run."""
+    global _autosync_timer
+    with _autosync_lock:
+        if _autosync_timer is not None:
+            _autosync_timer.cancel()
+        _autosync_timer = threading.Timer(interval_minutes * 60, _run_autosync)
+        _autosync_timer.daemon = True
+        _autosync_timer.start()
+
+
+def _stop_autosync() -> None:
+    """Cancel any pending auto-sync timer."""
+    global _autosync_timer
+    with _autosync_lock:
+        if _autosync_timer is not None:
+            _autosync_timer.cancel()
+            _autosync_timer = None
+
+
+def _record_sync_log(result: dict, trigger: str = "manual") -> None:
+    """Record a sync result in the in-memory log (keep last 10)."""
+    entry = {
+        "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "synced": result.get("synced", 0),
+        "skipped": result.get("skipped", 0),
+        "failed": result.get("failed", 0),
+        "trigger": trigger,
+    }
+    _sync_log.insert(0, entry)
+    del _sync_log[10:]  # keep only last 10
+
+
+def _get_autosync_status() -> dict[str, Any]:
+    """Build auto-sync status dict for templates."""
+    config = load_config()
+    auto_cfg = config.get("auto_sync", {})
+    enabled = auto_cfg.get("enabled", False)
+    interval = auto_cfg.get("interval_minutes", 30)
+
+    status: dict[str, Any] = {
+        "enabled": enabled,
+        "interval_minutes": interval,
+        "last_sync": None,
+        "next_sync": None,
+    }
+
+    if _last_sync_time:
+        elapsed = datetime.now(timezone.utc) - _last_sync_time
+        minutes_ago = int(elapsed.total_seconds() / 60)
+        if minutes_ago < 1:
+            status["last_sync"] = "just now"
+        elif minutes_ago == 1:
+            status["last_sync"] = "1 min ago"
+        else:
+            status["last_sync"] = f"{minutes_ago} min ago"
+
+        if enabled:
+            remaining = interval - minutes_ago
+            if remaining <= 0:
+                status["next_sync"] = "soon"
+            elif remaining == 1:
+                status["next_sync"] = "in 1 min"
+            else:
+                status["next_sync"] = f"in {remaining} min"
+
+    return status
+
+
+@app.on_event("startup")
+async def _startup_autosync() -> None:
+    """Start auto-sync timer on server startup if enabled."""
+    config = load_config()
+    auto_cfg = config.get("auto_sync", {})
+    if auto_cfg.get("enabled", False):
+        interval = auto_cfg.get("interval_minutes", 30)
+        logger.info("Auto-sync enabled on startup: every %d min", interval)
+        _schedule_autosync(interval)
 
 
 @app.middleware("http")
@@ -125,6 +237,12 @@ async def workouts_page(request: Request):
             except Exception:
                 pass
 
+        # Get profile for calorie calculation
+        profile = config.get("user_profile", {})
+        weight_kg = profile.get("weight_kg", 80.0)
+        birth_year = profile.get("birth_year", 1990)
+        vo2max = profile.get("vo2max", 45.0)
+
         for w in workouts_raw:
             w["start_time"] = w.get("start_time") or w.get("startTime", "")
             w["end_time"] = w.get("end_time") or w.get("endTime", "")
@@ -135,10 +253,50 @@ async def workouts_page(request: Request):
                 w["garmin_match"] = matches[w["id"]]
             else:
                 w["status"] = "pending"   # not on Garmin
+
+            # Calculate calorie breakdown for display
+            try:
+                start = w["start_time"]
+                end = w["end_time"]
+                if start and end:
+                    from hevy2garmin.fit import _parse_timestamp, _DEFAULT_HR_BPM
+                    start_dt = _parse_timestamp(start)
+                    end_dt = _parse_timestamp(end)
+                    duration_s = (end_dt - start_dt).total_seconds()
+                    workout_year = start_dt.year
+                    age = workout_year - birth_year
+                    # Default HR (no samples available in listing)
+                    hr = _DEFAULT_HR_BPM
+                    kcal_per_min = (
+                        -95.7735 + 0.634 * hr + 0.404 * vo2max
+                        + 0.394 * weight_kg + 0.271 * age
+                    ) / 4.184
+                    total_kcal = max(0, round(max(0.0, kcal_per_min) * (duration_s / 60.0)))
+                    duration_min = int(duration_s // 60)
+                    w["cal_info"] = {
+                        "duration_min": duration_min,
+                        "avg_hr": hr,
+                        "hr_source": "default 90 bpm",
+                        "weight_kg": weight_kg,
+                        "age": age,
+                        "total_kcal": total_kcal,
+                    }
+            except Exception:
+                pass
+
         workouts = workouts_raw
     except Exception as e:
         logger.error("Failed to fetch workouts: %s", e)
     return _render("workouts.html", workouts=workouts)
+
+
+@app.get("/sync", response_class=HTMLResponse)
+async def sync_page(request: Request):
+    return _render(
+        "sync.html",
+        auto_sync=_get_autosync_status(),
+        sync_log=_sync_log,
+    )
 
 
 @app.get("/mappings", response_class=HTMLResponse)
@@ -223,10 +381,13 @@ async def settings_save(
 
 @app.post("/api/sync", response_class=HTMLResponse)
 async def api_sync(request: Request):
+    global _last_sync_time
     try:
         result = sync(limit=10, dry_run=False)
     except Exception as e:
         result = {"synced": 0, "skipped": 0, "failed": 1, "unmapped": [], "error": str(e)}
+    _last_sync_time = datetime.now(timezone.utc)
+    _record_sync_log(result, trigger="manual")
     return _render("partials/sync_result.html", result=result)
 
 
@@ -259,6 +420,32 @@ async def api_sync_single(request: Request, workout_id: str):
         return HTMLResponse(f'<tr><td><span class="badge badge-success">✓ Synced</span></td><td>{start}</td><td><strong>{workout["title"]}</strong></td><td>{len(workout.get("exercises", []))}</td><td></td></tr>')
     except Exception as e:
         return HTMLResponse(f'<td colspan="5" style="color: var(--pico-del-color);">Failed: {e}</td>')
+
+
+@app.post("/api/toggle-autosync", response_class=HTMLResponse)
+async def api_toggle_autosync(request: Request):
+    form = await request.form()
+    enabled_raw = form.get("enabled", "false")
+    enabled = enabled_raw in ("true", "True", "1", True)
+    interval = int(form.get("interval", 30))
+    if interval not in (15, 30, 60):
+        interval = 30
+
+    config = load_config()
+    config.setdefault("auto_sync", {})
+    config["auto_sync"]["enabled"] = enabled
+    config["auto_sync"]["interval_minutes"] = interval
+    save_config(config)
+
+    if enabled:
+        _schedule_autosync(interval)
+        logger.info("Auto-sync enabled: every %d min", interval)
+    else:
+        _stop_autosync()
+        logger.info("Auto-sync disabled")
+
+    auto_sync = _get_autosync_status()
+    return _render("partials/autosync_status.html", auto_sync=auto_sync)
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
