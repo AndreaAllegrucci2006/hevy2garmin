@@ -28,7 +28,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "auto_sync": {
         "enabled": False,
-        "interval_minutes": 30,
+        "interval_minutes": 120,
     },
     "timing": {
         "working_set_seconds": 40,

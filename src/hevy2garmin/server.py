@@ -111,19 +111,20 @@ def _get_autosync_status() -> dict[str, Any]:
         minutes_ago = int(elapsed.total_seconds() / 60)
         if minutes_ago < 1:
             status["last_sync"] = "just now"
-        elif minutes_ago == 1:
-            status["last_sync"] = "1 min ago"
-        else:
+        elif minutes_ago < 60:
             status["last_sync"] = f"{minutes_ago} min ago"
+        else:
+            hours_ago = minutes_ago // 60
+            status["last_sync"] = f"{hours_ago}h {minutes_ago % 60}m ago"
 
         if enabled:
             remaining = interval - minutes_ago
             if remaining <= 0:
                 status["next_sync"] = "soon"
-            elif remaining == 1:
-                status["next_sync"] = "in 1 min"
-            else:
+            elif remaining < 60:
                 status["next_sync"] = f"in {remaining} min"
+            else:
+                status["next_sync"] = f"in {remaining // 60}h {remaining % 60}m"
 
     return status
 
@@ -427,9 +428,9 @@ async def api_toggle_autosync(request: Request):
     form = await request.form()
     enabled_raw = form.get("enabled", "false")
     enabled = enabled_raw in ("true", "True", "1", True)
-    interval = int(form.get("interval", 30))
-    if interval not in (15, 30, 60):
-        interval = 30
+    interval = int(form.get("interval", 120))
+    if interval not in (30, 60, 120, 240, 360, 720, 1440):
+        interval = 120
 
     config = load_config()
     config.setdefault("auto_sync", {})
