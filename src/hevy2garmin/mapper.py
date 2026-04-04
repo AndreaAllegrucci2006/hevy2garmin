@@ -634,11 +634,25 @@ _custom_loaded = False
 
 
 def _ensure_custom_loaded() -> None:
-    """Load custom mappings from disk on first use."""
+    """Load custom mappings from DB (cloud) or disk (local) on first use."""
     global _custom_loaded
     if _custom_loaded:
         return
     _custom_loaded = True
+
+    # Try DB first (cloud deployments)
+    try:
+        from hevy2garmin.db import get_database_url, get_db
+        if get_database_url():
+            _db = get_db()
+            if hasattr(_db, 'get_custom_mappings'):
+                for name, (cat, subcat) in _db.get_custom_mappings().items():
+                    _custom_mappings[name] = (cat, subcat)
+                return
+    except Exception:
+        pass
+
+    # Fallback: filesystem (local/Docker)
     import json
     from pathlib import Path
     path = Path("~/.hevy2garmin/custom_mappings.json").expanduser()

@@ -61,7 +61,18 @@ _unmapped_cache_time: float = 0
 
 
 def _get_unmapped_exercises() -> list[tuple[str, int]]:
-    """Get unmapped exercises from recent workouts. Cached 10min."""
+    """Get unmapped exercises. Uses DB cache (updated during sync)."""
+    # Try DB cache first (instant)
+    try:
+        _db = db.get_db()
+        if hasattr(_db, 'get_app_config'):
+            cached = _db.get_app_config("unmapped_exercises")
+            if cached and isinstance(cached, dict):
+                return sorted(cached.items(), key=lambda x: -x[1])
+    except Exception:
+        pass
+
+    # Fallback: in-memory cache (local installs)
     global _unmapped_cache, _unmapped_cache_time
     import time as _t
     if _unmapped_cache is not None and (_t.time() - _unmapped_cache_time) < 600:
@@ -206,14 +217,23 @@ async def _startup_autosync() -> None:
         _schedule_autosync(interval)
 
 
+_is_configured_cache: bool | None = None
+
 @app.middleware("http")
 async def check_setup(request: Request, call_next):
+    global _is_configured_cache
     path = request.url.path
-    if not is_configured() and not (
-        path in ("/setup", "/favicon.ico", "/api/sync-one", "/api/cron/sync", "/api/setup-actions")
-        or path.startswith("/static")
-    ):
-        return RedirectResponse("/setup")
+    if path in ("/setup", "/favicon.ico", "/api/sync-one", "/api/cron/sync",
+                "/api/setup-actions", "/api/garmin-ticket", "/api/reset-sync") \
+       or path.startswith("/static"):
+        return await call_next(request)
+    # Cache is_configured result (set to True after first successful setup)
+    if _is_configured_cache is None:
+        _is_configured_cache = is_configured()
+    if not _is_configured_cache:
+        _is_configured_cache = is_configured()  # Re-check in case setup just completed
+        if not _is_configured_cache:
+            return RedirectResponse("/setup")
     return await call_next(request)
 
 
@@ -650,14 +670,9 @@ async def settings_page(request: Request):
     config = load_config()
     unmapped: dict[str, int] = {}
     try:
-        from hevy2garmin.hevy import HevyClient
-        from hevy2garmin.mapper import lookup_exercise
-        data = HevyClient(api_key=config.get("hevy_api_key")).get_workouts(page=1, page_size=10)
-        for w in data.get("workouts", []):
-            for ex in w.get("exercises", []):
-                name = ex.get("title") or ex.get("name", "")
-                if lookup_exercise(name)[0] == 65534:
-                    unmapped[name] = unmapped.get(name, 0) + 1
+        # Use cached unmapped from DB (no Hevy API call)
+        for name, count in _get_unmapped_exercises():
+            unmapped[name] = count
     except Exception:
         pass
     return _render("settings.html", config=config, unmapped=sorted(unmapped.items(), key=lambda x: -x[1]))
