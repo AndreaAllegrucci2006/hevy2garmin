@@ -933,7 +933,15 @@ async def api_toggle_autosync(request: Request):
     save_config(config)
 
     if enabled:
-        _schedule_autosync(interval)
+        if os.environ.get("VERCEL") and os.environ.get("GITHUB_PAT"):
+            # On Vercel: set up GitHub Actions for cron-based sync
+            try:
+                result = await api_setup_actions(request)
+                logger.info("GitHub Actions auto-sync configured")
+            except Exception as e:
+                logger.warning("Failed to set up GitHub Actions: %s", e)
+        else:
+            _schedule_autosync(interval)
         logger.info("Auto-sync enabled: every %d min", interval)
     else:
         _stop_autosync()
