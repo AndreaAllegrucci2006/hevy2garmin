@@ -1226,15 +1226,21 @@ async def api_sync_one(request: Request):
         return JSONResponse({"synced": 1, "title": unsynced["title"], "remaining": max(0, remaining), "done": remaining <= 0})
     except Exception as e:
         logger.error("Sync failed for %s: %s", unsynced.get("title", "?"), str(e)[:300])
-        # User-friendly error
         err = str(e)
+
+        # Auth errors are hard stops — user needs to reconnect
         if "Login failed" in err or "OAuth" in err or "token" in err:
-            err = "Garmin connection expired. Go to Setup to reconnect."
-        elif "412" in err or "Precondition" in err:
-            err = "Garmin rejected the upload. Check Vercel logs for details."
-        elif len(err) > 150:
-            err = err[:150] + "..."
-        return JSONResponse({"synced": 0, "error": err, "remaining": -1, "done": False}, status_code=500)
+            return JSONResponse({"synced": 0, "error": "Garmin connection expired. Go to Setup to reconnect.", "remaining": -1, "done": False}, status_code=500)
+
+        # Upload errors (412, etc.) — skip this workout and continue
+        db.mark_synced(
+            hevy_id=unsynced["id"],
+            garmin_activity_id=None,
+            title=unsynced["title"] + " [FAILED]",
+        )
+        remaining = hevy.get_workout_count() - db.get_synced_count()
+        logger.warning("Skipped failed workout %s, %d remaining", unsynced["title"], remaining)
+        return JSONResponse({"synced": 1, "skipped_error": True, "title": unsynced["title"], "remaining": max(0, remaining), "done": remaining <= 0})
 
 
 @app.post("/api/reset-sync")
