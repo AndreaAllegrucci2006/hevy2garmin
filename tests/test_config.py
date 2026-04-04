@@ -61,9 +61,13 @@ class TestIsConfigured:
         with patch("hevy2garmin.config.CONFIG_FILE", tmp_path / "missing.json"):
             assert is_configured() is False
 
-    def test_true_with_api_key(self, tmp_path: Path) -> None:
+    def test_true_with_api_key(self, tmp_path: Path, monkeypatch) -> None:
         config_file = tmp_path / "config.json"
         config_file.write_text(json.dumps({"hevy_api_key": "some-key"}))
+
+        # When DATABASE_URL is set, is_configured also checks for Garmin tokens.
+        # Clear it so this test only validates the API key check.
+        monkeypatch.delenv("DATABASE_URL", raising=False)
 
         with patch("hevy2garmin.config.CONFIG_FILE", config_file):
             assert is_configured() is True
