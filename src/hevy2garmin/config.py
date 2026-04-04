@@ -85,12 +85,13 @@ def load_config() -> dict[str, Any]:
         except Exception:
             pass
 
-    # Environment variables override everything
-    if os.environ.get("HEVY_API_KEY"):
+    # Environment variables fill gaps (DB credentials take precedence since user may
+    # have changed them via the setup/settings UI after initial deploy)
+    if not config.get("hevy_api_key") and os.environ.get("HEVY_API_KEY"):
         config["hevy_api_key"] = os.environ["HEVY_API_KEY"]
-    if os.environ.get("GARMIN_EMAIL"):
+    if not config.get("garmin_email") and os.environ.get("GARMIN_EMAIL"):
         config["garmin_email"] = os.environ["GARMIN_EMAIL"]
-    if os.environ.get("GARMIN_PASSWORD"):
+    if not config.get("garmin_password") and os.environ.get("GARMIN_PASSWORD"):
         config["garmin_password"] = os.environ["GARMIN_PASSWORD"]
 
     return config
