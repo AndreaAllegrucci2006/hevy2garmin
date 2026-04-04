@@ -76,7 +76,7 @@
 {% set on_garmin = [synced_count, matched_count]|max %}
 <div class="stats-grid">
     <div class="stat-card">
-        <div class="stat-value accent">{{ on_garmin }}</div>
+        <div class="stat-value accent" id="stat-on-garmin">{{ on_garmin }}</div>
         <div class="stat-label">On Garmin</div>
     </div>
     <div class="stat-card">
@@ -85,7 +85,7 @@
     </div>
     <div class="stat-card">
         {% set pending = hevy_total - on_garmin %}
-        <div class="stat-value {% if pending > 0 %}amber{% endif %}">{{ pending }}</div>
+        <div class="stat-value {% if pending > 0 %}amber{% endif %}" id="stat-pending">{{ pending }}</div>
         <div class="stat-label">Pending</div>
     </div>
 </div>
@@ -101,7 +101,7 @@
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
         <button id="sync-now-btn" class="btn btn-primary btn-sm" onclick="syncNow()" style="flex-shrink: 0;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-            {% if synced_count == 0 and hevy_total > 0 %}Sync All {{ hevy_total }} Workout{{ 's' if hevy_total != 1 else '' }}{% else %}Sync Now{% endif %}
+            {% set pending = hevy_total - [synced_count, matched_count]|max %}{% if pending > 1 %}Sync {{ pending }} Workouts{% elif pending == 1 %}Sync 1 Workout{% else %}Sync Now{% endif %}
         </button>
         <button id="sync-stop-btn" class="btn btn-secondary btn-sm" onclick="stopSync()" style="display: none; flex-shrink: 0;">Stop</button>
         <div id="sync-progress" style="flex: 1; display: none;">
@@ -114,9 +114,10 @@
             </div>
         </div>
     </div>
-    {% if synced_count == 0 and hevy_total > 0 %}
+    {% set pending = hevy_total - [synced_count, matched_count]|max %}
+    {% if pending > 1 %}
     <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.6;">
-        Uploads one workout at a time (~{{ ((hevy_total * 8) / 60) | round(0) | int }} min for {{ hevy_total }}).
+        Uploads one workout at a time (~{{ ((pending * 8) / 60) | round(0) | int }} min for {{ pending }}).
         You can close this page and come back — it picks up where it left off.
     </p>
     {% endif %}
@@ -191,7 +192,7 @@
                 <div>
                     <div style="font-weight: 600; font-size: 13px;">{{ r.title }}</div>
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                        {{ r.synced_at[:10] }}
+                        {{ r.synced_at.strftime('%Y-%m-%d') if r.synced_at is not string else r.synced_at[:10] }}
                         {% if r.calories %} · {{ r.calories }} kcal{% endif %}
                     </div>
                 </div>
@@ -396,6 +397,13 @@ async function syncNow() {
                 const verb = data.skipped_duplicate ? 'Skipped' : 'Synced';
                 text.textContent = verb + ' "' + data.title + '" (' + synced + '/' + total + ')';
                 bar.style.width = pct + '%';
+                // Update stats live
+                if (data.remaining >= 0) {
+                    const onGarminEl = document.getElementById('stat-on-garmin');
+                    const pendingEl = document.getElementById('stat-pending');
+                    if (pendingEl) pendingEl.textContent = data.remaining;
+                    if (onGarminEl) onGarminEl.textContent = total - data.remaining;
+                }
             } else if (data.remaining > 0) {
                 continue;
             } else {

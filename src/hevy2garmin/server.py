@@ -1098,9 +1098,8 @@ async def api_sync_one(request: Request):
                 upload_result = upload_fit(garmin_client, fit_path, workout_start=unsynced.get("start_time"))
             except Exception as upload_err:
                 err_str = str(upload_err)
+                logger.warning("Upload failed for %s: %s", unsynced["title"], err_str[:300])
                 if "412" in err_str or "409" in err_str or "Duplicate" in err_str.lower():
-                    # Duplicate activity — mark as synced and move on
-                    logger.info("Skipping duplicate: %s (%s)", unsynced["title"], unsynced["id"])
                     db.mark_synced(
                         hevy_id=unsynced["id"],
                         garmin_activity_id=None,
