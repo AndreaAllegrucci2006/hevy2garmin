@@ -18,6 +18,8 @@
   <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="800">
 </p>
 
+> **Hevy Pro required.** The Hevy API is only available with a [Hevy Pro](https://hevyapp.com) subscription. Without it, hevy2garmin cannot access your workouts.
+
 ## Why?
 
 Hevy is great for tracking gym workouts but doesn't sync to Garmin. This tool bridges the gap:
@@ -39,7 +41,7 @@ Hevy is great for tracking gym workouts but doesn't sync to Garmin. This tool br
 
 ## Requirements
 
-- [Hevy](https://hevyapp.com) **Pro** subscription (API access requires Hevy Pro)
+- **[Hevy Pro](https://hevyapp.com) subscription** (required for API access)
 - A [Garmin Connect](https://connect.garmin.com) account
 - Python 3.10+ (for local install only, not needed for one-click deploy)
 
@@ -49,11 +51,13 @@ Pick the option that fits you best:
 
 ### One-Click Deploy (no coding required)
 
-Get your Hevy workouts syncing to Garmin in about 5 minutes. You need a **Hevy Pro** subscription for API access.
+Deploy from your phone or computer in about 5 minutes. No terminal or coding needed.
+
+> **You need [Hevy Pro](https://hevyapp.com) for API access.** Free Hevy accounts cannot use hevy2garmin.
 
 **Step 1: Get your Hevy API key**
 
-Open [hevy.com/settings](https://hevy.com/settings) (requires Hevy Pro), scroll to **Integrations & API**, click **Generate API Key**, and copy it.
+Open [hevy.com/settings](https://hevy.com/settings), scroll to **Integrations & API**, click **Generate API Key**, and copy it. If you don't see this section, you need to upgrade to Hevy Pro.
 
 **Step 2: Create a free GitHub account** (skip if you already have one)
 
@@ -61,17 +65,17 @@ Sign up at [github.com](https://github.com/signup). You'll use this to sign into
 
 **Step 3: Create a GitHub access token**
 
-This token lets hevy2garmin set up automatic syncing on your behalf. Open [this link](https://github.com/settings/tokens/new?scopes=repo,workflow&description=hevy2garmin) (sign in if prompted). The page looks complex but you only need to do three things:
+This token lets hevy2garmin set up automatic syncing on your behalf. Open [this link](https://github.com/settings/tokens/new?scopes=repo,workflow&description=hevy2garmin) (sign in if prompted):
 
 1. Set **Expiration** to **No expiration** (otherwise auto-sync stops when it expires)
-2. Scroll past everything else to the bottom, click **Generate token**
-3. **Copy the token immediately** (starts with `ghp_`). GitHub only shows it once. Paste it somewhere safe for the next step.
+2. Scroll to the bottom, click **Generate token**
+3. **Copy the token immediately** (starts with `ghp_`). GitHub only shows it once.
 
-**Step 4: Deploy**
+**Step 4: Deploy to Vercel**
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdrkostas%2Fhevy2garmin&env=HEVY_API_KEY,GARMIN_EMAIL,GARMIN_PASSWORD,GITHUB_PAT&envDescription=Hevy%20API%20key%2C%20Garmin%20credentials%2C%20and%20GitHub%20PAT%20(repo%2Bworkflow%20scopes)&stores=%5B%7B%22type%22%3A%22postgres%22%7D%5D&project-name=hevy2garmin)
 
-Click the button. Sign in with GitHub if prompted. Vercel will ask for 4 values:
+Click the button above. Sign in with GitHub if prompted. Vercel will ask for 4 values:
 
 | Field | What to paste |
 |-------|--------------|
@@ -80,13 +84,29 @@ Click the button. Sign in with GitHub if prompted. Vercel will ask for 4 values:
 | `GARMIN_PASSWORD` | Your Garmin Connect password |
 | `GITHUB_PAT` | The token from step 3 |
 
-Vercel will also create a free Postgres database automatically (leave the default integration prefix). Click **Deploy** and wait about a minute.
+Vercel will also create a free Postgres database automatically. Leave the default settings and click **Deploy**. Wait about a minute for it to build.
 
-**Step 5: Open your dashboard**
+**Step 5: Connect Garmin**
 
-Vercel gives you a URL like `hevy2garmin-yourname.vercel.app`. Open it, verify your credentials on the setup page, and click **Save & Continue**. The app connects to Garmin and sets up automatic syncing via GitHub Actions.
+Open your new app (Vercel gives you a URL like `hevy2garmin-yourname.vercel.app`). Click **Save & Continue** on the setup page.
 
-**That's it.** Your workouts sync every 2 hours. Click **Sync Now** on the dashboard to sync individual workouts immediately.
+The app will ask you to sign into Garmin through your browser:
+
+1. Tap **Sign into Garmin** (opens Garmin's login page in a new tab)
+2. Log in with your Garmin email and password
+3. After login, **copy the URL** from your browser's address bar
+4. Go back to the setup tab and **paste it** in the box
+5. Click **Connect**
+
+This is needed because Garmin blocks automated logins from cloud servers. Your browser does the login from your own internet connection, then the app stores the tokens securely.
+
+**Step 6: Sync your workouts**
+
+You're on the dashboard. Click **Sync All Workouts** to backfill your history. The app syncs one workout at a time (you can close the page and come back, it picks up where it left off).
+
+To keep future workouts syncing automatically, toggle **Auto-sync** on the dashboard. This creates a background job that syncs new workouts every 2 hours.
+
+**That's it.** Check [Garmin Connect](https://connect.garmin.com/modern/activities) to see your workouts with proper exercise names, sets, reps, and weights.
 
 ### Web Dashboard (local install)
 
@@ -143,7 +163,7 @@ hevy2garmin init
 # Sync your 10 most recent workouts
 hevy2garmin sync
 
-# List recent workouts (✓ = already synced)
+# List recent workouts (checkmark = already synced)
 hevy2garmin list
 
 # Check sync status
@@ -162,7 +182,7 @@ After syncing, check [Garmin Connect](https://connect.garmin.com/modern/activiti
 
 ```bash
 # Sync every 2 hours (uses credentials saved by hevy2garmin init)
-0 */2 * * * hevy2garmin sync -q
+0 */2 * * * hevy2garmin sync
 ```
 
 ### Docker
@@ -244,11 +264,13 @@ This adds `psycopg2-binary` and enables automatic Postgres backend detection via
 
 ## Getting Your Hevy API Key
 
-API access requires a [Hevy Pro](https://hevyapp.com) subscription.
+> **Hevy Pro is required.** API access is not available on the free plan.
 
 1. Go to [Hevy Settings](https://hevyapp.com/settings) > Integrations & API
 2. Click **Generate API Key** and copy it
 3. Paste it into `hevy2garmin init`, the web dashboard setup, or set as `HEVY_API_KEY` env var
+
+If you don't see the Integrations & API section, you need to upgrade to [Hevy Pro](https://hevyapp.com).
 
 ## Credentials
 
@@ -261,7 +283,7 @@ See [`.env.example`](.env.example) for all available env vars.
 
 **Garmin authentication:** Only needs the password for initial login. After that, tokens are cached (in `~/.garminconnect` locally or in Postgres for cloud deploys) and refresh automatically.
 
-> **First login:** Garmin may require additional verification. The [garmin-auth](https://pypi.org/project/garmin-auth/) library handles this automatically. This only happens once. For the one-click Vercel deploy, the setup wizard handles authentication for you.
+> **Cloud deploys (Vercel):** Garmin blocks automated logins from cloud servers. The setup wizard handles this by having you sign into Garmin through your browser, then securely storing the tokens. This only needs to be done once.
 
 ## How It Works
 
