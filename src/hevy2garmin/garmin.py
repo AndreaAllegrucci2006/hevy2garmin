@@ -90,20 +90,27 @@ def upload_fit(client: Garmin, fit_path: str | Path, workout_start: str | None =
     else:
         logger.info("  Upload response: %s", str(resp)[:200])
 
-    # Always wait and try to find the activity for renaming
+    # Find the activity ID for renaming (retry with backoff if needed)
     if not activity_id:
-        time.sleep(3)
-        if workout_start:
-            activity_id = find_activity_by_start_time(client, workout_start)
-        if not activity_id:
-            try:
-                activities = _limiter.call(client.get_activities, 0, 5)
-                if activities:
-                    activity_id = activities[0].get("activityId")
-            except Exception as e:
-                logger.warning("  Could not find uploaded activity: %s", e)
+        for attempt, wait in enumerate([3, 5], 1):
+            time.sleep(wait)
+            if workout_start:
+                activity_id = find_activity_by_start_time(client, workout_start)
+            if not activity_id:
+                try:
+                    activities = _limiter.call(client.get_activities, 0, 5)
+                    if activities:
+                        activity_id = activities[0].get("activityId")
+                except Exception as e:
+                    logger.warning("  Could not find uploaded activity: %s", e)
+            if activity_id:
+                break
+            logger.info("  Activity not found yet (attempt %d), retrying...", attempt)
+
     if activity_id:
         logger.info("  Found activity %s", activity_id)
+    else:
+        logger.warning("  Could not find activity ID after upload. Workout will appear as 'Strength Training' on Garmin.")
 
     return {"upload_id": upload_id, "activity_id": activity_id}
 
@@ -127,13 +134,13 @@ def find_activity_by_start_time(
         return None
 
     for act in activities:
-        act_start_str = act.get("startTimeLocal") or act.get("startTimeGMT", "")
+        # Prefer startTimeGMT (UTC) over startTimeLocal to avoid timezone mismatch
+        act_start_str = act.get("startTimeGMT") or act.get("startTimeLocal", "")
         try:
-            # Garmin returns "YYYY-MM-DD HH:MM:SS" without timezone
             if "T" not in act_start_str:
                 act_start_str = act_start_str.replace(" ", "T")
             act_start = datetime.fromisoformat(act_start_str)
-            # Compare naive (drop timezone for comparison since Garmin returns local)
+            # Both should be UTC now, compare naive
             target_naive = target.replace(tzinfo=None) if target.tzinfo else target
             act_naive = act_start.replace(tzinfo=None) if act_start.tzinfo else act_start
             if abs((act_naive - target_naive).total_seconds()) < window_minutes * 60:
