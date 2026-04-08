@@ -1237,7 +1237,8 @@ async def api_sync_one(request: Request):
         if "upload consent" in err.lower() or "EU location" in err:
             return JSONResponse({
                 "synced": 0,
-                "error": "Garmin requires upload consent. Go to connect.garmin.com > Settings > Account > Privacy, enable 'Device Upload', then try again.",
+                "error": "Garmin requires upload consent. Open connect.garmin.com/modern/settings, scroll to Data, enable Device Upload, then try again.",
+                "eu_consent": True,
                 "remaining": -1, "done": False
             }, status_code=500)
 

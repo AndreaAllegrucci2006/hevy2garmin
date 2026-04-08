@@ -375,7 +375,10 @@ async function syncNow() {
                 errors++;
                 // Show user-friendly error messages
                 const err = data.error;
-                if (err.includes('Login failed') || err.includes('auth') || err.includes('OAuth') || err.includes('token')) {
+                if (data.eu_consent) {
+                    text.textContent = 'Garmin requires upload consent.';
+                    result.innerHTML = '<div class="toast toast-error">Enable Device Upload in <a href="https://connect.garmin.com/modern/settings" target="_blank" style="color: inherit; text-decoration: underline;">Garmin Settings</a> > Data, then try again.</div>';
+                } else if (err.includes('Login failed') || err.includes('auth') || err.includes('OAuth') || err.includes('token')) {
                     text.textContent = 'Garmin connection expired. Please reconnect from Setup.';
                     result.innerHTML = '<div class="toast toast-error">Garmin connection expired. <a href="/setup" style="color: inherit; text-decoration: underline;">Reconnect</a></div>';
                 } else {
